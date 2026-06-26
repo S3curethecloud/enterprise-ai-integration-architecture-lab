@@ -21,6 +21,11 @@ services:
     volumes:
       - ./evidence:/app/evidence
 
+  ai-gateway:
+    build: ./services/ai-gateway
+    ports:
+      - "8005:8000"
+
   api-gateway:
     build: ./services/api-gateway
     ports:
@@ -30,8 +35,10 @@ services:
       CMDB_URL: http://cmdb-adapter:8000
       TICKETING_URL: http://ticketing-adapter:8000
       AUDIT_URL: http://audit-service:8000
+      AI_GATEWAY_URL: http://ai-gateway:8000
     depends_on:
       - identity-service
       - cmdb-adapter
       - ticketing-adapter
       - audit-service
+      - ai-gateway

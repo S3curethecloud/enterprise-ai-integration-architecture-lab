@@ -1,0 +1,20 @@
+flowchart TD
+    Start[User Request] --> API[API Gateway]
+    API --> Identity[Identity Service]
+    API --> CMDB[CMDB Adapter]
+    API --> AIGW[AI Gateway]
+
+    AIGW --> Classify[Classify Prompt Type]
+    Classify --> Inject[Detect Prompt Injection]
+    Inject --> Risk[Estimate AI Risk]
+    Risk --> Route[Select Model Route]
+    Route --> Controls[Apply Control Metadata]
+
+    Controls --> Block{Should Block?}
+    Block -- Yes --> Deny[Deny Request]
+    Block -- No --> Policy[Policy Decision]
+
+    Deny --> Audit[Write Audit Evidence]
+    Policy --> Ticket[Create Ticket If Allowed]
+    Ticket --> Audit
+    Audit --> Response[Return Structured Response]

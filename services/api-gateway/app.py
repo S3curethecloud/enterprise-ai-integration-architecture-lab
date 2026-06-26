@@ -8,11 +8,12 @@ IDENTITY_URL = os.getenv("IDENTITY_URL", "http://identity-service:8000")
 CMDB_URL = os.getenv("CMDB_URL", "http://cmdb-adapter:8000")
 TICKETING_URL = os.getenv("TICKETING_URL", "http://ticketing-adapter:8000")
 AUDIT_URL = os.getenv("AUDIT_URL", "http://audit-service:8000")
+AI_GATEWAY_URL = os.getenv("AI_GATEWAY_URL", "http://ai-gateway:8000")
 
 app = FastAPI(
     title="Enterprise AI Integration API Gateway",
     description="Control-plane entry point for enterprise AI integration workflow.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
@@ -21,6 +22,18 @@ class ReviewRequest(BaseModel):
     asset_id: str
     question: str
     requested_action: str = "answer_only"
+
+
+RISK_ORDER = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+
+def max_risk(left: str, right: str) -> str:
+    return left if RISK_ORDER[left] >= RISK_ORDER[right] else right
 
 
 def classify_risk(requested_action: str, asset: dict) -> str:
@@ -89,6 +102,14 @@ def decide_policy(user_role: str, requested_action: str, risk_level: str) -> dic
     }
 
 
+def deny_for_ai_gateway(ai_gateway_result: dict) -> dict:
+    return {
+        "decision": "deny",
+        "approval_required": False,
+        "reason": ai_gateway_result.get("block_reason") or "AI Gateway recommended request block.",
+    }
+
+
 def build_grounded_response(asset: dict, question: str) -> dict:
     findings = []
 
@@ -113,8 +134,27 @@ def build_grounded_response(asset: dict, question: str) -> dict:
             "knowledge-base/policies/ai-usage-policy.md",
             "knowledge-base/runbooks/database-remediation.md",
         ],
-        "note": "Phase 1 uses deterministic enterprise simulation. RAG and model inference are added in later phases.",
+        "note": "Phase 2 includes AI Gateway classification and routing. RAG and model inference are added in later phases.",
     }
+
+
+def call_ai_gateway(claims: dict, asset: dict, payload: ReviewRequest) -> dict:
+    response = requests.post(
+        f"{AI_GATEWAY_URL}/ai-gateway/classify",
+        json={
+            "user_id": payload.user_id,
+            "user_role": claims["role"],
+            "question": payload.question,
+            "requested_action": payload.requested_action,
+            "asset": asset,
+        },
+        timeout=5,
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="AI Gateway classification failed")
+
+    return response.json()
 
 
 @app.get("/health")
@@ -136,8 +176,16 @@ def review_request(payload: ReviewRequest):
         raise HTTPException(status_code=404, detail="Unable to locate requested asset")
     asset = asset_response.json()
 
-    risk_level = classify_risk(payload.requested_action, asset)
-    policy = decide_policy(claims["role"], payload.requested_action, risk_level)
+    ai_gateway_result = call_ai_gateway(claims, asset, payload)
+
+    deterministic_risk = classify_risk(payload.requested_action, asset)
+    risk_level = max_risk(deterministic_risk, ai_gateway_result["risk_level"])
+
+    if ai_gateway_result.get("should_block"):
+        policy = deny_for_ai_gateway(ai_gateway_result)
+    else:
+        policy = decide_policy(claims["role"], payload.requested_action, risk_level)
+
     grounded_response = build_grounded_response(asset, payload.question)
 
     action_taken = "none"
@@ -158,6 +206,9 @@ def review_request(payload: ReviewRequest):
         ticket = ticket_response.json()
         action_taken = "ticket_created"
 
+    if ai_gateway_result.get("should_block"):
+        action_taken = "blocked_by_ai_gateway"
+
     audit_payload = {
         "request_id": request_id,
         "user_id": payload.user_id,
@@ -173,6 +224,7 @@ def review_request(payload: ReviewRequest):
             "policy_reason": policy["reason"],
             "findings": grounded_response["findings"],
             "ticket": ticket,
+            "ai_gateway": ai_gateway_result,
         },
     }
 
@@ -192,6 +244,7 @@ def review_request(payload: ReviewRequest):
             "environment": asset["environment"],
             "classification": asset["data_classification"],
         },
+        "ai_gateway": ai_gateway_result,
         "risk_level": risk_level,
         "policy_decision": policy,
         "grounded_response": grounded_response,
