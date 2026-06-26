@@ -1,0 +1,24 @@
+flowchart TB
+User[Enterprise User] --> Client[Web UI or CLI Client]
+Client --> APIGW[API Gateway]
+
+APIGW --> Identity[Identity Service<br/>OIDC / JWT / RBAC]
+Identity --> AIGW[AI Gateway<br/>Prompt Controls / Risk Scoring / Model Routing]
+
+AIGW --> Policy[Policy Engine<br/>Allow / Deny / Approval Required]
+AIGW --> RAG[RAG Service<br/>Enterprise Knowledge Retrieval]
+
+RAG --> KB[Knowledge Base<br/>Policies / Runbooks / Architecture Docs]
+
+Policy --> CMDB[CMDB Adapter<br/>Assets / Owners / Classification]
+Policy --> Ticketing[Ticketing Adapter<br/>Remediation Workflow]
+
+AIGW --> Model[Model Provider<br/>Bedrock / Azure OpenAI / Vertex AI / Local Model]
+
+Model --> Response[Response Orchestrator<br/>Grounded Answer / Risk / Recommended Action]
+
+Response --> Audit[Audit Service<br/>Evidence / Decision Records]
+Response --> Approval[Approval Service<br/>Human-in-the-Loop]
+
+Audit --> Observability[Observability Layer<br/>Logs / Metrics / Traces / Dashboards]
+

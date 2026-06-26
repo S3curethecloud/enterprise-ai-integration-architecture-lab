@@ -1,0 +1,27 @@
+{
+"request_id": "REQ-1001",
+"timestamp": "2026-06-26T00:00:00Z",
+"user": {
+"id": "user-1001",
+"role": "security_operator"
+},
+"request": {
+"type": "create_remediation_ticket",
+"risk_level": "medium",
+"data_classification": "internal"
+},
+"retrieval": {
+"sources": [
+"knowledge-base/policies/backup-policy.md",
+"knowledge-base/runbooks/database-remediation.md"
+]
+},
+"policy_decision": {
+"decision": "allow_with_audit",
+"approval_required": false
+},
+"action": {
+"ticket_created": true,
+"ticket_id": "TICKET-1001"
+}
+}

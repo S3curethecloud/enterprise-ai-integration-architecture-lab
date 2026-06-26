@@ -1,0 +1,25 @@
+sequenceDiagram
+participant U as User
+participant API as API Gateway
+participant ID as Identity Service
+participant AI as AI Gateway
+participant RAG as RAG Service
+participant POL as Policy Engine
+participant M as Model Provider
+participant AUD as Audit Service
+
+U->>API: Submit AI-assisted request
+API->>ID: Validate identity and role
+ID-->>API: Return claims
+API->>AI: Forward request with claims
+AI->>AI: Classify prompt and risk
+AI->>RAG: Retrieve enterprise context
+RAG-->>AI: Return relevant sources
+AI->>POL: Evaluate governance policy
+POL-->>AI: Decision
+AI->>M: Generate grounded response
+M-->>AI: Response
+AI->>AUD: Write evidence record
+AI-->>API: Return final response
+API-->>U: Display response
+

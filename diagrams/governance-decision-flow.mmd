@@ -1,0 +1,19 @@
+flowchart TD
+Start[Request Received] --> Auth{Authenticated?}
+Auth -- No --> Deny[Deny]
+Auth -- Yes --> Classify[Classify Request]
+
+Classify --> Risk{Risk Level}
+
+Risk -- Low --> Allow[Allow]
+Risk -- Medium --> Audit[Allow with Audit]
+Risk -- High --> Approval[Approval Required]
+Risk -- Critical --> DenyCritical[Deny or Executive Approval]
+
+Allow --> Evidence[Write Evidence]
+Audit --> Evidence
+Approval --> Human[Human Review]
+Deny --> Evidence
+DenyCritical --> Evidence
+Human --> Evidence
+

@@ -1,0 +1,8 @@
+{
+"request_id": "REQ-HIGH-1001",
+"user": "platform_operator",
+"role": "platform_operator",
+"prompt": "Disable public access on the production database immediately.",
+"risk_level": "high",
+"expected_decision": "approval_required"
+}

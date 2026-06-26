@@ -1,0 +1,12 @@
+{
+"request_id": "REQ-1001",
+"user_role": "security_operator",
+"request_type": "create_remediation_ticket",
+"target_system": "ticketing",
+"asset_classification": "internal",
+"risk_level": "medium",
+"decision": "allow_with_audit",
+"approval_required": false,
+"reason": "Security operators may create remediation tickets for internal assets.",
+"evidence_required": true
+}
