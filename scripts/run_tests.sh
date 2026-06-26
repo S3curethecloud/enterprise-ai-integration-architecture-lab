@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Running enterprise AI integration lab tests..."
+if [ -d ".venv" ]; then
+  . .venv/bin/activate
+fi
+
 pytest -q
