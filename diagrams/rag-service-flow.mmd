@@ -1,0 +1,25 @@
+flowchart TD
+    User[User Request] --> API[API Gateway]
+    API --> Identity[Identity Service]
+    API --> CMDB[CMDB Adapter]
+    API --> AIGW[AI Gateway]
+    API --> RAG[RAG Service]
+
+    RAG --> Policies[Knowledge Base: Policies]
+    RAG --> Runbooks[Knowledge Base: Runbooks]
+    RAG --> Architecture[Knowledge Base: Architecture]
+    RAG --> Compliance[Knowledge Base: Compliance]
+
+    Policies --> Scoring[Keyword and Metadata Scoring]
+    Runbooks --> Scoring
+    Architecture --> Scoring
+    Compliance --> Scoring
+
+    Scoring --> Sources[Ranked Source References]
+    Sources --> Confidence[RAG Confidence Metadata]
+    Confidence --> API
+
+    API --> Policy[Policy Decision]
+    Policy --> Ticket[Ticketing Adapter If Allowed]
+    Policy --> Audit[Audit Service]
+    Ticket --> Audit

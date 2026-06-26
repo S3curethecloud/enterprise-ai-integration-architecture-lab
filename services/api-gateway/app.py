@@ -9,11 +9,12 @@ CMDB_URL = os.getenv("CMDB_URL", "http://cmdb-adapter:8000")
 TICKETING_URL = os.getenv("TICKETING_URL", "http://ticketing-adapter:8000")
 AUDIT_URL = os.getenv("AUDIT_URL", "http://audit-service:8000")
 AI_GATEWAY_URL = os.getenv("AI_GATEWAY_URL", "http://ai-gateway:8000")
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://rag-service:8000")
 
 app = FastAPI(
     title="Enterprise AI Integration API Gateway",
     description="Control-plane entry point for enterprise AI integration workflow.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 
@@ -110,34 +111,6 @@ def deny_for_ai_gateway(ai_gateway_result: dict) -> dict:
     }
 
 
-def build_grounded_response(asset: dict, question: str) -> dict:
-    findings = []
-
-    if asset.get("type") == "database" and asset.get("backup_enabled") is False:
-        findings.append("Backup policy violation detected: database backup is not enabled.")
-
-    if asset.get("public_access") is True:
-        findings.append("Network exposure finding detected: asset has public access enabled.")
-
-    if asset.get("encryption_enabled") is False:
-        findings.append("Encryption finding detected: encryption is not enabled.")
-
-    if not findings:
-        findings.append("No immediate control violation detected from the available CMDB fields.")
-
-    return {
-        "summary": "Enterprise context was evaluated using CMDB asset metadata and internal policy references.",
-        "asset": asset["asset_id"],
-        "findings": findings,
-        "retrieved_sources": [
-            "knowledge-base/policies/backup-policy.md",
-            "knowledge-base/policies/ai-usage-policy.md",
-            "knowledge-base/runbooks/database-remediation.md",
-        ],
-        "note": "Phase 2 includes AI Gateway classification and routing. RAG and model inference are added in later phases.",
-    }
-
-
 def call_ai_gateway(claims: dict, asset: dict, payload: ReviewRequest) -> dict:
     response = requests.post(
         f"{AI_GATEWAY_URL}/ai-gateway/classify",
@@ -155,6 +128,62 @@ def call_ai_gateway(claims: dict, asset: dict, payload: ReviewRequest) -> dict:
         raise HTTPException(status_code=502, detail="AI Gateway classification failed")
 
     return response.json()
+
+
+def call_rag_service(claims: dict, asset: dict, payload: ReviewRequest) -> dict:
+    response = requests.post(
+        f"{RAG_SERVICE_URL}/rag/retrieve",
+        json={
+            "question": payload.question,
+            "asset": asset,
+            "requested_action": payload.requested_action,
+            "user_role": claims["role"],
+            "max_sources": 3,
+        },
+        timeout=5,
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="RAG retrieval failed")
+
+    return response.json()
+
+
+def build_grounded_response(asset: dict, question: str, rag_result: dict) -> dict:
+    findings = []
+
+    if asset.get("type") == "database" and asset.get("backup_enabled") is False:
+        findings.append("Backup policy violation detected: database backup is not enabled.")
+
+    if asset.get("public_access") is True:
+        findings.append("Network exposure finding detected: asset has public access enabled.")
+
+    if asset.get("encryption_enabled") is False:
+        findings.append("Encryption finding detected: encryption is not enabled.")
+
+    if not findings:
+        findings.append("No immediate control violation detected from the available CMDB fields.")
+
+    retrieval = rag_result["retrieval"]
+
+    return {
+        "summary": "Enterprise context was evaluated using CMDB asset metadata and retrieved internal policy/runbook sources.",
+        "asset": asset["asset_id"],
+        "findings": findings,
+        "retrieved_sources": retrieval["source_paths"],
+        "rag_confidence": retrieval["confidence"],
+        "source_summaries": [
+            {
+                "title": source["title"],
+                "path": source["path"],
+                "source_type": source["source_type"],
+                "score": source["score"],
+                "matched_terms": source["keyword_matches"],
+            }
+            for source in retrieval["sources"]
+        ],
+        "note": "Phase 3 adds deterministic enterprise knowledge retrieval. Live model inference remains out of scope.",
+    }
 
 
 @app.get("/health")
@@ -181,12 +210,14 @@ def review_request(payload: ReviewRequest):
     deterministic_risk = classify_risk(payload.requested_action, asset)
     risk_level = max_risk(deterministic_risk, ai_gateway_result["risk_level"])
 
+    rag_result = call_rag_service(claims, asset, payload)
+
     if ai_gateway_result.get("should_block"):
         policy = deny_for_ai_gateway(ai_gateway_result)
     else:
         policy = decide_policy(claims["role"], payload.requested_action, risk_level)
 
-    grounded_response = build_grounded_response(asset, payload.question)
+    grounded_response = build_grounded_response(asset, payload.question, rag_result)
 
     action_taken = "none"
     ticket = None
@@ -225,6 +256,7 @@ def review_request(payload: ReviewRequest):
             "findings": grounded_response["findings"],
             "ticket": ticket,
             "ai_gateway": ai_gateway_result,
+            "rag": rag_result,
         },
     }
 
@@ -245,6 +277,7 @@ def review_request(payload: ReviewRequest):
             "classification": asset["data_classification"],
         },
         "ai_gateway": ai_gateway_result,
+        "rag": rag_result,
         "risk_level": risk_level,
         "policy_decision": policy,
         "grounded_response": grounded_response,
