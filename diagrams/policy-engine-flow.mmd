@@ -1,0 +1,23 @@
+flowchart TD
+    Request[Enterprise AI Request] --> API[API Gateway]
+    API --> Identity[Identity Service]
+    API --> CMDB[CMDB Adapter]
+    API --> AIGW[AI Gateway]
+    API --> RAG[RAG Service]
+
+    AIGW --> Policy[Policy Engine]
+    RAG --> Policy
+    CMDB --> Policy
+    Identity --> Policy
+
+    Policy --> Decision{Decision}
+
+    Decision -- allow --> Response[Return Response]
+    Decision -- allow_with_audit --> Ticket[Create Ticket]
+    Decision -- approval_required --> Approval[Approval Required]
+    Decision -- deny --> Deny[Deny Request]
+
+    Ticket --> Audit[Audit Service]
+    Response --> Audit
+    Approval --> Audit
+    Deny --> Audit

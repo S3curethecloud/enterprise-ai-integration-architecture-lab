@@ -16,6 +16,7 @@ curl -s http://localhost:8003/health | python3 -m json.tool
 curl -s http://localhost:8004/health | python3 -m json.tool
 curl -s http://localhost:8005/health | python3 -m json.tool
 curl -s http://localhost:8006/health | python3 -m json.tool
+curl -s http://localhost:8007/health | python3 -m json.tool
 
 echo ""
 echo "Demo request 1: security operator creates remediation ticket using retrieved policy/runbook context"
@@ -29,7 +30,7 @@ curl -s -X POST http://localhost:8000/enterprise-ai/review \
   }' | python3 -m json.tool
 
 echo ""
-echo "Demo request 2: prompt injection attempt is blocked while still writing retrieval/audit evidence"
+echo "Demo request 2: prompt injection attempt is blocked by AI Gateway and enforced by Policy Engine"
 curl -s -X POST http://localhost:8000/enterprise-ai/review \
   -H "Content-Type: application/json" \
   -d '{
@@ -40,7 +41,7 @@ curl -s -X POST http://localhost:8000/enterprise-ai/review \
   }' | python3 -m json.tool
 
 echo ""
-echo "Demo request 3: read-only architecture question retrieves IT integration context"
+echo "Demo request 3: read-only architecture question retrieves IT integration context and is allowed by Policy Engine"
 curl -s -X POST http://localhost:8000/enterprise-ai/review \
   -H "Content-Type: application/json" \
   -d '{

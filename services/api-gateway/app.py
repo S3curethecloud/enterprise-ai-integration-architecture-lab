@@ -10,11 +10,12 @@ TICKETING_URL = os.getenv("TICKETING_URL", "http://ticketing-adapter:8000")
 AUDIT_URL = os.getenv("AUDIT_URL", "http://audit-service:8000")
 AI_GATEWAY_URL = os.getenv("AI_GATEWAY_URL", "http://ai-gateway:8000")
 RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://rag-service:8000")
+POLICY_ENGINE_URL = os.getenv("POLICY_ENGINE_URL", "http://policy-engine:8000")
 
 app = FastAPI(
     title="Enterprise AI Integration API Gateway",
     description="Control-plane entry point for enterprise AI integration workflow.",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 
@@ -66,6 +67,8 @@ def classify_risk(requested_action: str, asset: dict) -> str:
     return "low"
 
 
+# Backward-compatible local policy helper used by earlier contract tests.
+# Runtime policy enforcement now happens in the dedicated policy-engine service.
 def decide_policy(user_role: str, requested_action: str, risk_level: str) -> dict:
     ticket_roles = {"security_operator", "platform_operator", "architecture_admin"}
 
@@ -100,14 +103,6 @@ def decide_policy(user_role: str, requested_action: str, risk_level: str) -> dic
         "decision": "allow",
         "approval_required": False,
         "reason": "Read-only request is allowed.",
-    }
-
-
-def deny_for_ai_gateway(ai_gateway_result: dict) -> dict:
-    return {
-        "decision": "deny",
-        "approval_required": False,
-        "reason": ai_gateway_result.get("block_reason") or "AI Gateway recommended request block.",
     }
 
 
@@ -149,6 +144,36 @@ def call_rag_service(claims: dict, asset: dict, payload: ReviewRequest) -> dict:
     return response.json()
 
 
+def call_policy_engine(
+    request_id: str,
+    claims: dict,
+    asset: dict,
+    payload: ReviewRequest,
+    risk_level: str,
+    ai_gateway_result: dict,
+    rag_result: dict,
+) -> dict:
+    response = requests.post(
+        f"{POLICY_ENGINE_URL}/policy/evaluate",
+        json={
+            "request_id": request_id,
+            "user_id": payload.user_id,
+            "user_role": claims["role"],
+            "requested_action": payload.requested_action,
+            "risk_level": risk_level,
+            "asset": asset,
+            "ai_gateway": ai_gateway_result,
+            "rag": rag_result,
+        },
+        timeout=5,
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="Policy Engine evaluation failed")
+
+    return response.json()
+
+
 def build_grounded_response(asset: dict, question: str, rag_result: dict) -> dict:
     findings = []
 
@@ -182,7 +207,7 @@ def build_grounded_response(asset: dict, question: str, rag_result: dict) -> dic
             }
             for source in retrieval["sources"]
         ],
-        "note": "Phase 3 adds deterministic enterprise knowledge retrieval. Live model inference remains out of scope.",
+        "note": "Phase 4 uses a dedicated Policy Engine for deterministic governance decisions. Live model inference remains out of scope.",
     }
 
 
@@ -212,10 +237,15 @@ def review_request(payload: ReviewRequest):
 
     rag_result = call_rag_service(claims, asset, payload)
 
-    if ai_gateway_result.get("should_block"):
-        policy = deny_for_ai_gateway(ai_gateway_result)
-    else:
-        policy = decide_policy(claims["role"], payload.requested_action, risk_level)
+    policy = call_policy_engine(
+        request_id=request_id,
+        claims=claims,
+        asset=asset,
+        payload=payload,
+        risk_level=risk_level,
+        ai_gateway_result=ai_gateway_result,
+        rag_result=rag_result,
+    )
 
     grounded_response = build_grounded_response(asset, payload.question, rag_result)
 
@@ -237,7 +267,7 @@ def review_request(payload: ReviewRequest):
         ticket = ticket_response.json()
         action_taken = "ticket_created"
 
-    if ai_gateway_result.get("should_block"):
+    if policy["decision"] == "deny" and ai_gateway_result.get("should_block"):
         action_taken = "blocked_by_ai_gateway"
 
     audit_payload = {
@@ -253,6 +283,7 @@ def review_request(payload: ReviewRequest):
         "retrieved_sources": grounded_response["retrieved_sources"],
         "details": {
             "policy_reason": policy["reason"],
+            "policy_engine": policy,
             "findings": grounded_response["findings"],
             "ticket": ticket,
             "ai_gateway": ai_gateway_result,
